@@ -7,9 +7,9 @@ object Example {
   def main(args: Array[String]): Unit = {
     val ctx = new SqlMirrorContext(PostgresDialect, Literal)
     import ctx._
-    inline def q = quote {
-      query[Person].filter(p => p.name == "Joe")
-    }
+    inline def q =
+      query[Person]
+
     println(run(q).string)
   }
 }
