@@ -5,7 +5,7 @@ lazy val `protoquill-example` = project
     version := "0.1.0",
     resolvers ++= Seq(
       Resolver.mavenLocal,
-      "Sonatype OSS Snapshots" at "https://oss.sonatype.org/service/local/repositories/snapshots",
+      "Sonatype OSS Snapshots" at "https://oss.sonatype.org/service/local/repositories/snapshots/content",
       "Sonatype OSS Releases" at "https://oss.sonatype.org/service/local/repositories/releases/content"
     ),
     scalaVersion := "3.0.0",
@@ -13,6 +13,6 @@ lazy val `protoquill-example` = project
       "-language:implicitConversions",
     ),
     libraryDependencies ++= Seq(
-      "io.getquill" %% "quill-sql" % "3.7.2.Beta1.4"
+      "io.getquill" %% "quill-sql" % "top_level-SNAPSHOT"
     )
   )
