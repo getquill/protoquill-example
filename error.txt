@@ -1,0 +1,28 @@
+[info] compiling 3 Scala sources to /home/alexi/git/protoquill-example-bak/target/scala-3.1.0/classes ...
+[warn] -- Warning: /home/alexi/git/protoquill-example-bak/src/main/scala/io/getquill/simple/InlineMac.scala:1:20
+[warn] 1 |package io.getquill.simple
+[warn]   |^
+[warn]   |No class, trait or object is defined in the compilation unit.
+[warn]   |The incremental compiler cannot record the dependency information in such case.
+[warn]   |Some errors like unused import referring to a non-existent class might not be reported.
+[warn] 2 |import scala.quoted._
+[warn] -- Warning: /home/alexi/git/protoquill-example-bak/src/main/scala/io/getquill/simple/InlineUse.scala:1:20
+[warn] 1 |package io.getquill.simple
+[warn]   |^^^^^^^^^^^^^^^^^^^^^^^^^^
+[warn]   |No class, trait or object is defined in the compilation unit.
+[warn]   |The incremental compiler cannot record the dependency information in such case.
+[warn]   |Some errors like unused import referring to a non-existent class might not be reported.
+[info] -- Info: /home/alexi/git/protoquill-example-bak/src/main/scala/example/module/Example.scala:34:8
+[info] 34 |     run(query[Person]).provide(env)
+[info]    |     ^^^^^^^^^^^^^^^^^^
+[info]    |     Quill Query: SELECT x.name, x.age FROM person x
+[info] -- Info: /home/alexi/git/protoquill-example-bak/src/main/scala/example/module/Example.scala:36:8
+[info] 36 |     run(query[Person].filter(p => p.age > lift(age))).provide(env)
+[info]    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+[info]    |     Quill Query: SELECT p.name, p.age FROM person p WHERE p.age > ?
+[error] -- Error: /home/alexi/git/protoquill-example-bak/src/main/scala/example/module/Example.scala:45:16
+[error] 44 |      DataService.getPeople
+[error] 45 |        .provide(QuillContext.dataSourceLayer, DataServiceLive.layer)
+[error]    |      ^
+[error]    |     Cannot call macro trait DataService defined in the same source file
+[error]    | This location contains code that was inlined from Example.scala:45

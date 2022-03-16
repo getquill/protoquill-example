@@ -8,11 +8,12 @@ lazy val `protoquill-example` = project
       "Sonatype OSS Snapshots" at "https://oss.sonatype.org/content/repositories/snapshots",
       "Sonatype OSS Releases" at "https://oss.sonatype.org/content/repositories/releases"
     ),
-    scalaVersion := "3.0.0", // 3.0.1
+    scalaVersion := "3.1.0",
     scalacOptions ++= Seq(
       "-language:implicitConversions",
     ),
     libraryDependencies ++= Seq(
-      "io.getquill" %% "quill-sql" % "3.10.0.Beta1.5"
+      "io.getquill"          %% "quill-jdbc-zio" % "3.17.0.Beta3.0-RC2",
+      "org.postgresql"       %  "postgresql"     % "42.3.1"
     )
   )
