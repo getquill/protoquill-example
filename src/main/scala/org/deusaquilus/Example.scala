@@ -1,4 +1,6 @@
-package io.getquill
+package org.deusaquilus
+
+import io.getquill._
 
 object Example {
 
@@ -6,10 +8,11 @@ object Example {
 
   def main(args: Array[String]): Unit = {
     val ctx = new SqlMirrorContext(PostgresDialect, Literal)
-    import ctx._
+    import ctx.*
     inline def q = quote {
       query[Person].filter(p => p.name == "Joe")
     }
+    inline def v = query[Person]
     println(run(q).string)
   }
 }
