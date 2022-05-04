@@ -1,6 +1,8 @@
 package org.deusaquilus
 
-import io.getquill._
+import io.getquill.Dsl.*
+import io.getquill.{SqlMirrorContext, PostgresDialect, Literal}
+import io.getquill.defaultParser
 
 object Example {
 
