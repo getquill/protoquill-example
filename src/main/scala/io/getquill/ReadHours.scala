@@ -24,7 +24,7 @@ object ReadHours {
   }
    */
 
-  val LinesPerHour: Int = 80
+  val LinesPerHour: Int = 50
   val HoursPerDay = 5
   val SlotsPerHour = 2
 
@@ -234,6 +234,8 @@ object ReadHours {
     val totalHoursWorked = totalSlotsWorked/2
     println(s"============= Worked: ${totalHoursWorked}, slots: ${totalSlotsWorked} =============")
 
+    // TODO Go through the date range. Combine all entries from a single day.
+    // create the CSV used for toggl
   }
 
   //    def toHours(additions: Int) = additions.toDouble/(LinesPerHour.toDouble)
