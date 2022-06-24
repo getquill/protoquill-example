@@ -6,6 +6,7 @@ import com.fasterxml.jackson.module.scala.{ClassTagExtensions, DefaultScalaModul
 
 import java.io.File
 import java.time._
+import java.time.format.DateTimeFormatter
 import scala.collection.mutable
 
 
@@ -24,12 +25,14 @@ object ReadHours {
   }
    */
 
-  val LinesPerHour: Int = 50
+  val LinesPerHour: Int = 60
   val HoursPerDay = 5
   val SlotsPerHour = 2
 
   val LinesPerSlot: Int = LinesPerHour / 2
-  val SlotsPerDay: Int = HoursPerDay * 2
+  val SlotsPerWeekday: Int = HoursPerDay * 2
+  val SlotsPerSaturday: Int = 3 * 2
+  val SlotsPerFriday: Int = 4 * 2
   val StartDate: LocalDate = LocalDate.of(2021, 1, 1)
   val EndDate: LocalDate = LocalDate.now()
 
@@ -57,6 +60,15 @@ object ReadHours {
     }
   }
 
+  implicit class DateSlotsOps(date: LocalDate) {
+    def numSlots = {
+      val dayOfWeek = date.getDayOfWeek
+      if (dayOfWeek == DayOfWeek.FRIDAY) SlotsPerFriday
+      else if (dayOfWeek == DayOfWeek.SATURDAY) SlotsPerSaturday
+      else SlotsPerWeekday
+    }
+  }
+
   case class WorkDone(slotsWorked: Int, workToDo: WorkToDo) {
     def show = s"[(wk${workToDo.workSlots}-done${slotsWorked})${workToDo.commit.show}]"
     def remaining = workToDo.workSlots - slotsWorked
@@ -79,7 +91,7 @@ object ReadHours {
     def show = {
       days.toList.sortBy(_._1.atStartOfDay().toInstant(ZoneOffset.UTC)).map {
         case (date, day) =>
-          val dayOriginal = daysOriginal.get(date).getOrElse(Day(date, List(), SlotsPerDay))
+          val dayOriginal = daysOriginal.get(date).getOrElse(Day(date, List(), date.numSlots))
           val workDone = allWorkDone.get(date).getOrElse(List())
           val workAndDone = dayOriginal.work.map(wk => (wk, workDone.find(_.workToDo.commit == wk.commit)))
           val workAndDoneStr =
@@ -145,7 +157,7 @@ object ReadHours {
       //      for now maybe change the friday worked hours to be during the day & just filter out local holidays
       //      on the final output report?
       val prevDate = currDay.date.minusDays(1)
-      val prevDayRaw = days.get(prevDate).getOrElse(Day(prevDate, List(), SlotsPerDay))
+      val prevDayRaw = days.get(prevDate).getOrElse(Day(prevDate, List(), prevDate.numSlots))
       val prevDay = prevDayRaw.copy(work = remainingWork ++ prevDayRaw.work)
 
       newDays.put(currDay.date, currDay.copy(workSlotsLeft = slotsRemaining))
@@ -173,7 +185,7 @@ object ReadHours {
       val daysList =
         dateRange.map { date =>
           val work = workByDay.get(date).getOrElse(List())
-          (date, Day(date, work, SlotsPerDay))
+          (date, Day(date, work, date.numSlots))
         }
 
       val daysMap = mutable.LinkedHashMap(daysList: _*)
@@ -232,11 +244,90 @@ object ReadHours {
 
     val totalSlotsWorked = newCal.allWorkDone.map { case (date, workDone) => workDone.map(_.slotsWorked).sum }.sum
     val totalHoursWorked = totalSlotsWorked/2
-    println(s"============= Worked: ${totalHoursWorked}, slots: ${totalSlotsWorked} =============")
+
 
     // TODO Go through the date range. Combine all entries from a single day.
     // create the CSV used for toggl
+
+    val timeEntries =
+      dates.reverse.flatMap(date => TimeEntry.fromWorkDoneAtDay(date, newCal.allWorkDone))
+
+    val csvEntries =
+      CsvHeader + "\n" + timeEntries.map(_.makeCsv.print).mkString("\n")
+
+    def writeFile(name: String, content: String) = {
+      import java.nio.file.{Paths, Files}
+      import java.nio.charset.StandardCharsets
+
+      Files.write(Paths.get(name), content.getBytes(StandardCharsets.UTF_8))
+    }
+    writeFile("toggl_import.csv", csvEntries)
+
+    println(s"============= Worked: ${totalHoursWorked}, slots: ${totalSlotsWorked} =============")
   }
+
+  case class CsvEntry(email:String, duration: String, startTime: String, startDate: String, description: String, project: String) {
+    def print =
+      s"${email},${duration},${startTime},${startDate},${description},${project}"
+  }
+
+
+  val CsvHeader = "Email,Duration,Start Time,Start Date,Description,Project"
+
+  case class TimeEntry(date: LocalDate, slotsWorked: Int, description: String, project: String) {
+    def makeCsv: CsvEntry = {
+      def formatDuration(duration: Duration) = DateTimeFormatter.ISO_LOCAL_TIME.format(duration.addTo(LocalTime.of(0, 0)))
+      def formatTime(time: LocalTime) = time.format(DateTimeFormatter.ISO_LOCAL_TIME)
+      def formatDate(date: LocalDate) = date.toString
+
+      val email = "alexander.ioffe@ziverge.com"
+      val startTime =
+        if (date.getDayOfWeek == DayOfWeek.FRIDAY)
+          formatTime(LocalTime.of(12,0,0))
+        else if (date.getDayOfWeek == DayOfWeek.SATURDAY)
+          formatTime(LocalTime.of(22,0,0))
+        else
+          formatTime(LocalTime.of(8,0,0))
+
+      val duration = formatDuration(Duration.ofMinutes(slotsWorked * 30))
+      val startDate = formatDate(date)
+      CsvEntry(email, duration, startTime, startDate, description, project)
+    }
+  }
+
+  def parseTitle(maxAmount: Int)(title: String) =
+    if (title.length > maxAmount) title.split(" ").toList.take(4).mkString(" ") + "..."
+    else title
+
+  object TimeEntry {
+    def fromWorkDoneAtDay(date: LocalDate, worksDone: Map[LocalDate, List[WorkDone]]) = {
+      val allWork = worksDone.get(date).getOrElse(List())
+      val quillWork = allWork.filter(_.workToDo.commit.projectName == "zio-quill")
+      val protoWork = allWork.filter(_.workToDo.commit.projectName == "zio-protoquill")
+
+      def entryFromWorks(works: List[WorkDone], projectName: String) = {
+        val gitData = works.map(_.workToDo.commit).distinct.sortBy(_.authoredDate.toInstant(ZoneOffset.UTC))
+        val totalDescription = {
+          if (gitData.length <= 3)
+            gitData.map(g => s"${parseTitle(20)(g.message.takeWhile(c => c != '\n'))} (${g.oid.take(7)})").mkString(". ").replace(",", ".")
+          else {
+            val msg = gitData.take(3).map(g => s"${parseTitle(20)(g.message.takeWhile(c => c != '\n'))}").mkString(". ")
+            val commits = gitData.take(3).map(g => s"(${g.oid.take(7)})").mkString(" ")
+            (msg + " " + commits).replace(",", ".")
+          }
+        }
+
+        //TimeEntry(date, works.map(_.slotsWorked).sum, totalDescription, projectName)
+        //TimeEntry(date, works.map(_.slotsWorked).sum, "blah", projectName)
+        TimeEntry(date, works.map(_.slotsWorked).sum, totalDescription, projectName)
+      }
+
+      val quillTimeEntry = if (quillWork.nonEmpty) List(entryFromWorks(quillWork, "zio-quill")) else List()
+      val protoTimeEntry = if (protoWork.nonEmpty) List(entryFromWorks(protoWork, "zio-protoquill")) else List()
+      quillTimeEntry ++ protoTimeEntry
+    }
+  }
+
 
   //    def toHours(additions: Int) = additions.toDouble/(LinesPerHour.toDouble)
   //    filtered.map(f => s"====== Add: ${f.additions} Work: ${toHours(f.additions)} ======= ${f.authoredDate} ==== ${f.message.take(10)}").foreach(println(_))
