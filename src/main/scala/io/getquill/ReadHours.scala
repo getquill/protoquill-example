@@ -24,11 +24,12 @@ object ReadHours {
   }
    */
 
-  val LinesPerHour: Int = 40
+  val LinesPerHour: Int = 80
   val HoursPerDay = 5
+  val SlotsPerHour = 2
 
-  val LinesPerHalfHour: Int = LinesPerHour / 2
-  val HalfHoursPerDay: Int = HoursPerDay * 2
+  val LinesPerSlot: Int = LinesPerHour / 2
+  val SlotsPerDay: Int = HoursPerDay * 2
   val StartDate: LocalDate = LocalDate.of(2021, 1, 1)
   val EndDate: LocalDate = LocalDate.now()
 
@@ -36,59 +37,61 @@ object ReadHours {
   case class GitCommit(oid: String, author: Author, message: String, additions: Int, deletions: Int, authoredDate: LocalDateTime)
 
   case class GitData(projectName: String, oid: String, author: String, message: String, additions: Int, deletions: Int, authoredDate: LocalDateTime) {
-    def show = s"[${message.take(10)}(+${additions},-${deletions})]"
+    def showAddsDeletes = s"[${message.take(10)}(+${additions},-${deletions})]"
+    val projectNameLetter = if (projectName == "zio-quill") "Q" else if (projectName == "zio-protoquill") "P" else throw new IllegalArgumentException("")
+    def show = s"${projectNameLetter}:${message.take(10)}"
   }
   object GitData {
     def fromCommit(projectName: String, c: GitCommit) =
       GitData(projectName, c.oid, c.author.name, c.message, c.additions, c.deletions, c.authoredDate)
   }
 
-  case class WorkToDo(onDate: LocalDate, halfHours: Int, commit: GitData) {
-    def show = s"[${commit.message.take(10)}(wk${halfHours})]"
+  case class WorkToDo(onDate: LocalDate, workSlots: Int, commit: GitData) {
+    def show = s"${commit.show}(wk${workSlots})"
   }
   object WorkToDo {
     def apply(commit: GitData) = {
-      val linesPerHalfHour: Double = LinesPerHour.toDouble / 2
-      val taskHalfHours = Math.ceil(commit.additions.toDouble / linesPerHalfHour).toInt
-      new WorkToDo(commit.authoredDate.toLocalDate, taskHalfHours, commit)
+      val linesPerSlot: Double = LinesPerHour.toDouble / SlotsPerHour
+      val slotsNeededByTask = Math.ceil(commit.additions.toDouble / linesPerSlot).toInt
+      new WorkToDo(commit.authoredDate.toLocalDate, slotsNeededByTask, commit)
     }
   }
 
-  case class WorkDone(halfHoursWorked: Int, workToDo: WorkToDo) {
-    def show = s"[(wk${workToDo.halfHours}-done${halfHoursWorked})${workToDo.commit.message.take(10)}]"
-    def remaining = workToDo.halfHours - halfHoursWorked
+  case class WorkDone(slotsWorked: Int, workToDo: WorkToDo) {
+    def show = s"[(wk${workToDo.workSlots}-done${slotsWorked})${workToDo.commit.show}]"
+    def remaining = workToDo.workSlots - slotsWorked
     def complete = {
       val r = remaining
       if (r < 0) throw new IllegalArgumentException(s"Less than 0 work remaining ${remaining} on ${this.workToDo.commit.message.take(5)}")
       r == 0
     }
     def doWork(slots: Int) =
-      this.copy(this.halfHoursWorked + 1, this.workToDo)
-    def remainingWork = workToDo.copy(halfHours = workToDo.halfHours - halfHoursWorked)
+      this.copy(this.slotsWorked + 1, this.workToDo)
+    def remainingWork = workToDo.copy(workSlots = workToDo.workSlots - slotsWorked)
   }
 
-  case class Day(date: LocalDate, work: List[WorkToDo], halfHoursLeft: Int) {
+  case class Day(date: LocalDate, work: List[WorkToDo], workSlotsLeft: Int) {
     def show = {
-      s"== Day: ${date} == ${work.map(w => s"${w.halfHours}-[${w.commit.message.take(20)}:${w.commit.additions}]")}"
+      s"== Day: ${date} == ${work.map(w => s"${w.workSlots}-[${w.commit.message.take(20)}:${w.commit.additions}]")}"
     }
   }
   case class Calendar(start: LocalDate, end: LocalDate, days: mutable.LinkedHashMap[LocalDate, Day], allWorkDone: Map[LocalDate, List[WorkDone]], daysOriginal: mutable.LinkedHashMap[LocalDate, Day]) {
     def show = {
-      days.map {
+      days.toList.sortBy(_._1.atStartOfDay().toInstant(ZoneOffset.UTC)).map {
         case (date, day) =>
-          val dayOriginal = daysOriginal(date)
+          val dayOriginal = daysOriginal.get(date).getOrElse(Day(date, List(), SlotsPerDay))
           val workDone = allWorkDone.get(date).getOrElse(List())
           val workAndDone = dayOriginal.work.map(wk => (wk, workDone.find(_.workToDo.commit == wk.commit)))
           val workAndDoneStr =
             workAndDone.map { case (origWork, workDoneOpt) =>
               if (workDoneOpt.isDefined) {
                 val workDone = workDoneOpt.get
-                s"Wk${origWork.halfHours}<-${workDone.halfHoursWorked}r${workDone.remaining}-[${origWork.commit.message.take(10)}]"
+                s"Wk${origWork.workSlots}<-${workDone.slotsWorked}r${workDone.remaining}-[${origWork.show}]"
               } else {
-                s"Wk${origWork.halfHours}-[${origWork.commit.message.take(10)}]"
+                s"Wk${origWork.workSlots}-[${origWork.commit.show}]"
               }
             }
-          s"== ${date} == HHWorked:${workDone.map(_.halfHoursWorked).sum} == ${workAndDoneStr}"
+          s"== ${date} == HHWorked:${workDone.map(_.slotsWorked).sum} == ${workAndDoneStr}"
       }.mkString("\n")
     }
 
@@ -105,7 +108,7 @@ object ReadHours {
       // - for the work done, return a list of WorkDone objects (return WorkDone of 0 if no work could be done on that date)
       // - compute a List[WorkToDo] of remaining half-hour slots for each task
       var worksDone = workForDay.map(WorkDone(0, _))
-      var slotsRemaining = currDay.halfHoursLeft
+      var slotsRemaining = currDay.workSlotsLeft
 
       println(s"====== Begin ${workForDay.length} works on ${currDay.date} with ${slotsRemaining} slots remaining: ${workForDay.map(_.show)}")
 
@@ -115,7 +118,7 @@ object ReadHours {
             if (slotsRemaining > 0 && !workDone.complete) {
               val newWorkDone = workDone.doWork(1)
               slotsRemaining = slotsRemaining - 1
-              println(s"== ${date} == Doing 1 Work for: done${workDone.halfHoursWorked}=>${newWorkDone.show} ======= Remaining: ${slotsRemaining} ")
+              println(s"== ${date} == Doing 1 Work for: done${workDone.slotsWorked}=>${newWorkDone.show} ======= Remaining: ${slotsRemaining} ")
               newWorkDone
             } else {
               workDone
@@ -142,10 +145,10 @@ object ReadHours {
       //      for now maybe change the friday worked hours to be during the day & just filter out local holidays
       //      on the final output report?
       val prevDate = currDay.date.minusDays(1)
-      val prevDayRaw = days.get(prevDate).getOrElse(Day(prevDate, List(), HalfHoursPerDay))
+      val prevDayRaw = days.get(prevDate).getOrElse(Day(prevDate, List(), SlotsPerDay))
       val prevDay = prevDayRaw.copy(work = remainingWork ++ prevDayRaw.work)
 
-      newDays.put(currDay.date, currDay.copy(halfHoursLeft = slotsRemaining))
+      newDays.put(currDay.date, currDay.copy(workSlotsLeft = slotsRemaining))
       newDays.put(prevDate, prevDay)
 
       val newWorksDone: Map[LocalDate, List[WorkDone]] = allWorkDone ++ Map(currDay.date -> worksDone)
@@ -170,7 +173,7 @@ object ReadHours {
       val daysList =
         dateRange.map { date =>
           val work = workByDay.get(date).getOrElse(List())
-          (date, Day(date, work, HalfHoursPerDay))
+          (date, Day(date, work, SlotsPerDay))
         }
 
       val daysMap = mutable.LinkedHashMap(daysList: _*)
@@ -186,37 +189,53 @@ object ReadHours {
       .addModule(new JavaTimeModule())
       .build() :: ClassTagExtensions
 
-  def main(args: Array[String]): Unit = {
-    val path = "/home/alexi/github_scripts/complete_commitdata_protoquill.json"
+
+  def loadFromPath(path: String, projectName: String): List[GitData] = {
     val commitsRaw = mapper.readValue[List[GitCommit]](new File(path))
-    val commits = commitsRaw.map(r => GitData.fromCommit("zio-protoquill", r))
+    val commits = commitsRaw.map(r => GitData.fromCommit(projectName, r))
+    commits
+  }
+
+  def main(args: Array[String]): Unit = {
+//    val path = "/home/alexi/github_scripts/complete_commitdata_protoquill.json"
+//    val commitsRaw = mapper.readValue[List[GitCommit]](new File(path))
+//    val commits = commitsRaw.map(r => GitData.fromCommit("zio-protoquill", r))
+
+    val commits =
+      loadFromPath("/home/alexi/github_scripts/complete_commitdata_protoquill.json", "zio-protoquill") ++
+        loadFromPath("/home/alexi/github_scripts/complete_commitdata_quill.json", "zio-quill")
 
     val filtered =
       commits
         .sortBy(_.authoredDate.toInstant(ZoneOffset.UTC))
         .filter(_.author == "Alexander Ioffe")
         .filter(_.authoredDate.isAfter(LocalDate.of(2021,1,1).atStartOfDay()))
-        .filter(_.additions > LinesPerHalfHour /*Filter by commits with at least half an hour of work*/)
+        .filter(_.additions > LinesPerSlot /*Filter by commits with at least half an hour of work*/)
         //.map(_.additions)
 
+    def totalHours(data: List[GitData]) = {
+      val totalAdditions = data.map(_.additions).sum.toDouble
+      val totalHoursWorked = totalAdditions/LinesPerHour
+      totalHoursWorked
+    }
 
-    val totalAdditions = filtered.map(_.additions).sum.toDouble
-    val totalHoursWorked = totalAdditions/LinesPerHour
-    println(s"Total Since 2021: ${totalHoursWorked}")
 
-//    def toHours(additions: Int) = additions.toDouble/(LinesPerHour.toDouble)
-//    filtered.map(f => s"====== Add: ${f.additions} Work: ${toHours(f.additions)} ======= ${f.authoredDate} ==== ${f.message.take(10)}").foreach(println(_))
+    println(s"Total Hours Quill: ${totalHours(filtered.filter(_.projectName == "zio-quill"))}")
+    println(s"Total Hours ProtoQuill: ${totalHours(filtered.filter(_.projectName == "zio-protoquill"))}")
+
 
     val cal = Calendar.build(filtered)
-    //println(cal.show)
-
-    //val dates = makeDateRange(LocalDate.of(2022,6,8), LocalDate.of(2022,5,23))
-    val dates = makeDateRange(LocalDate.of(2022,6,1), LocalDate.of(2022,6,7)).reverse
+    val dates = makeDateRange(LocalDate.of(2021,1,1), LocalDate.of(2022,6,24)).reverse
     println(dates)
     val newCal = dates.foldLeft(cal)((cal, date) => cal.doWorkOn(date))
     println(newCal.show)
 
-    //val newCal = cal.doWorkOn(LocalDate.of(2022,6,8))
-    //val newCal = cal.doWorkOn(LocalDate.of(2022,6,7))
+    val totalSlotsWorked = newCal.allWorkDone.map { case (date, workDone) => workDone.map(_.slotsWorked).sum }.sum
+    val totalHoursWorked = totalSlotsWorked/2
+    println(s"============= Worked: ${totalHoursWorked}, slots: ${totalSlotsWorked} =============")
+
   }
+
+  //    def toHours(additions: Int) = additions.toDouble/(LinesPerHour.toDouble)
+  //    filtered.map(f => s"====== Add: ${f.additions} Work: ${toHours(f.additions)} ======= ${f.authoredDate} ==== ${f.message.take(10)}").foreach(println(_))
 }
