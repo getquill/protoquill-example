@@ -88,7 +88,7 @@ object ReadHours {
                 s"Wk${origWork.halfHours}-[${origWork.commit.message.take(10)}]"
               }
             }
-          s"== ${date} == HH:${workDone.map(_.halfHoursWorked).sum} == ${workAndDoneStr}"
+          s"== ${date} == HHWorked:${workDone.map(_.halfHoursWorked).sum} == ${workAndDoneStr}"
       }.mkString("\n")
     }
 
@@ -160,7 +160,7 @@ object ReadHours {
   }
 
   def makeDateRange(start: LocalDate, end: LocalDate) =
-    Iterator.iterate(StartDate)(date => date.plusDays(1)).takeWhile(_.isBefore(EndDate)).toList
+    Iterator.iterate(start)(date => date.plusDays(1)).takeWhile(r => r.isBefore(end) || r == end).toList
 
   object Calendar {
     def build(allCommits: List[GitData]) = {
@@ -208,12 +208,13 @@ object ReadHours {
 //    filtered.map(f => s"====== Add: ${f.additions} Work: ${toHours(f.additions)} ======= ${f.authoredDate} ==== ${f.message.take(10)}").foreach(println(_))
 
     val cal = Calendar.build(filtered)
-    println(cal.show)
+    //println(cal.show)
 
     //val dates = makeDateRange(LocalDate.of(2022,6,8), LocalDate.of(2022,5,23))
-    val dates = makeDateRange(LocalDate.of(2022,6,7), LocalDate.of(2022,6,1))
+    val dates = makeDateRange(LocalDate.of(2022,6,1), LocalDate.of(2022,6,7)).reverse
+    println(dates)
     val newCal = dates.foldLeft(cal)((cal, date) => cal.doWorkOn(date))
-    println(cal.show)
+    println(newCal.show)
 
     //val newCal = cal.doWorkOn(LocalDate.of(2022,6,8))
     //val newCal = cal.doWorkOn(LocalDate.of(2022,6,7))
